@@ -45,12 +45,13 @@ class ImagePreprocessor:
         
         return img
     
-    def load_dataset(self, data_dir):
+    def load_dataset(self, data_dir, is_test_set=False):
         """
-        Load dataset from directory structure
+        Load dataset from flat naming structure
         
         Args:
             data_dir (str): Path to data directory
+            is_test_set (bool): Whether this is a test set (different naming)
             
         Returns:
             tuple: (images, labels, file_paths)
@@ -59,33 +60,74 @@ class ImagePreprocessor:
         labels = []
         file_paths = []
         
-        for class_name in self.class_names:
-            class_dir = os.path.join(data_dir, class_name)
-            if os.path.exists(class_dir):
-                for filename in os.listdir(class_dir):
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        file_path = os.path.join(class_dir, filename)
+        # Get all files in the directory
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    file_path = os.path.join(data_dir, filename)
+                    
+                    if is_test_set:
+                        # For test set, we don't have class names in filenames
+                        # We'll assign dummy labels (0) for evaluation purposes
+                        # In practice, you'd have the true labels separately
                         try:
                             img = self.load_and_preprocess_image(file_path)
                             images.append(img)
-                            labels.append(self.class_names.index(class_name))
+                            labels.append(0)  # Dummy label for test set
                             file_paths.append(file_path)
                         except Exception as e:
                             print(f"Error loading {file_path}: {e}")
+                    else:
+                        # For training set, extract class name from filename
+                        class_name = filename.split('.')[0]
+                        
+                        # Check if it's a valid class
+                        if class_name in self.class_names:
+                            try:
+                                img = self.load_and_preprocess_image(file_path)
+                                images.append(img)
+                                labels.append(self.class_names.index(class_name))
+                                file_paths.append(file_path)
+                            except Exception as e:
+                                print(f"Error loading {file_path}: {e}")
         
         return np.array(images), np.array(labels), file_paths
     
-    def create_data_generators(self, train_dir, validation_split=0.2):
+    def create_data_generators(self, train_dir, validation_split=0.0, is_test_set=False):
         """
-        Create data generators for training and validation
+        Create data generators for training (no validation split since we have separate test set)
         
         Args:
             train_dir (str): Path to training data directory
-            validation_split (float): Fraction of data to use for validation
+            validation_split (float): Set to 0.0 to use all training data
+            is_test_set (bool): Whether this is a test set
             
         Returns:
             tuple: (train_generator, validation_generator)
         """
+        # Load all data first
+        images, labels, file_paths = self.load_dataset(train_dir, is_test_set=is_test_set)
+        
+        if len(images) == 0:
+            print("Warning: No images found in the dataset!")
+            return None, None
+        
+        # Convert labels to categorical
+        from tensorflow.keras.utils import to_categorical
+        labels_categorical = to_categorical(labels, num_classes=len(self.class_names))
+        
+        # Use all data for training (no validation split)
+        if validation_split > 0:
+            # Split data into train and validation
+            from sklearn.model_selection import train_test_split
+            X_train, X_val, y_train, y_val = train_test_split(
+                images, labels_categorical, test_size=validation_split, 
+                random_state=42, stratify=labels
+            )
+        else:
+            # Use all data for training
+            X_train, y_train = images, labels_categorical
+        
         # Data augmentation for training
         train_datagen = ImageDataGenerator(
             rescale=1./255,
@@ -95,40 +137,53 @@ class ImagePreprocessor:
             shear_range=0.2,
             zoom_range=0.2,
             horizontal_flip=True,
-            fill_mode='nearest',
-            validation_split=validation_split
+            fill_mode='nearest'
         )
         
         # Only rescaling for validation
         validation_datagen = ImageDataGenerator(
-            rescale=1./255,
-            validation_split=validation_split
+            rescale=1./255
         )
         
-        # Create generators
-        train_generator = train_datagen.flow_from_directory(
-            train_dir,
-            target_size=self.img_size,
+        # Create generators using flow method instead of flow_from_directory
+        train_generator = train_datagen.flow(
+            X_train, y_train,
             batch_size=self.batch_size,
-            class_mode='categorical',
-            subset='training',
             shuffle=True
         )
         
-        validation_generator = validation_datagen.flow_from_directory(
-            train_dir,
-            target_size=self.img_size,
-            batch_size=self.batch_size,
-            class_mode='categorical',
-            subset='validation',
-            shuffle=False
-        )
+        # Add attributes that the model expects
+        train_generator.samples = len(X_train)
+        train_generator.num_classes = len(self.class_names)
+        train_generator.class_indices = {name: i for i, name in enumerate(self.class_names)}
+        
+        # Create validation generator
+        if validation_split > 0:
+            # Use actual validation data
+            validation_generator = validation_datagen.flow(
+                X_val, y_val,
+                batch_size=self.batch_size,
+                shuffle=False
+            )
+            validation_generator.samples = len(X_val)
+        else:
+            # Create a simple validation generator with the same data (for compatibility)
+            # In practice, you'll use the separate test set for evaluation
+            validation_generator = validation_datagen.flow(
+                X_train, y_train,  # Use same data for validation (will be overridden by test set)
+                batch_size=self.batch_size,
+                shuffle=False
+            )
+            validation_generator.samples = len(X_train)
+        
+        validation_generator.num_classes = len(self.class_names)
+        validation_generator.class_indices = {name: i for i, name in enumerate(self.class_names)}
         
         return train_generator, validation_generator
     
     def analyze_dataset(self, data_dir):
         """
-        Analyze the dataset and create visualizations
+        Analyze the dataset with flat naming structure
         
         Args:
             data_dir (str): Path to data directory
@@ -139,22 +194,28 @@ class ImagePreprocessor:
         class_counts = {}
         image_sizes = []
         
+        # Initialize class counts
         for class_name in self.class_names:
-            class_dir = os.path.join(data_dir, class_name)
-            if os.path.exists(class_dir):
-                class_count = len([f for f in os.listdir(class_dir) 
-                                 if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
-                class_counts[class_name] = class_count
-                
-                # Sample some images to get size distribution
-                for filename in os.listdir(class_dir)[:5]:
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        file_path = os.path.join(class_dir, filename)
-                        try:
-                            img = Image.open(file_path)
-                            image_sizes.append(img.size)
-                        except:
-                            pass
+            class_counts[class_name] = 0
+        
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    # Extract class name from filename (e.g., 'cat.0.jpg' -> 'cat')
+                    class_name = filename.split('.')[0]
+                    
+                    # Count images per class
+                    if class_name in self.class_names:
+                        class_counts[class_name] += 1
+                        
+                        # Sample some images to get size distribution
+                        if len(image_sizes) < 10:  # Limit to 10 samples
+                            file_path = os.path.join(data_dir, filename)
+                            try:
+                                img = Image.open(file_path)
+                                image_sizes.append(img.size)
+                            except:
+                                pass
         
         # Create visualizations
         self._create_dataset_visualizations(class_counts, image_sizes)

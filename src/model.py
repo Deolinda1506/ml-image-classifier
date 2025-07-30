@@ -151,7 +151,19 @@ class ImageClassifier:
         # Get predictions
         predictions = self.model.predict(test_generator)
         y_pred = np.argmax(predictions, axis=1)
-        y_true = test_generator.classes
+        
+        # Get true labels - handle different generator types
+        if hasattr(test_generator, 'classes'):
+            # Standard Keras generator
+            y_true = test_generator.classes
+        else:
+            # Custom generator - extract labels from the generator
+            y_true = []
+            test_generator.reset()
+            for i in range(len(test_generator)):
+                _, batch_labels = test_generator[i]
+                y_true.extend(np.argmax(batch_labels, axis=1))
+            y_true = np.array(y_true)
         
         # Calculate additional metrics
         from sklearn.metrics import classification_report, confusion_matrix
