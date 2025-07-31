@@ -1,322 +1,343 @@
 import os
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras import layers, models, optimizers, callbacks
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import pandas as pd
 import matplotlib.pyplot as plt
-import pickle
-import json
+import seaborn as sns
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+from sklearn.preprocessing import StandardScaler
+import joblib
+import cv2
 from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
 class ImageClassifier:
-    def __init__(self, img_size=(224, 224), num_classes=2, learning_rate=0.001):
+    def __init__(self, model_type='random_forest'):
         """
         Initialize the image classifier
         
         Args:
-            img_size (tuple): Input image size
-            num_classes (int): Number of classes
-            learning_rate (float): Learning rate for optimizer
+            model_type (str): Type of model to use ('random_forest', 'svm', 'knn')
         """
-        self.img_size = img_size
-        self.num_classes = num_classes
-        self.learning_rate = learning_rate
+        self.model_type = model_type
         self.model = None
-        self.history = None
+        self.scaler = StandardScaler()
+        self.feature_names = None
         self.class_names = ['cat', 'dog']
+        self.training_history = []
         
-    def build_model(self, use_pretrained=True):
+    def extract_features(self, images):
         """
-        Build the CNN model
+        Extract features from images using color histograms and texture features
         
         Args:
-            use_pretrained (bool): Whether to use pre-trained MobileNetV2
+            images (np.array): Array of images
             
         Returns:
-            tensorflow.keras.Model: Compiled model
+            np.array: Feature matrix
         """
-        if use_pretrained:
-            # Use pre-trained MobileNetV2 as base
-            base_model = MobileNetV2(
-                weights='imagenet',
-                include_top=False,
-                input_shape=(self.img_size[0], self.img_size[1], 3)
-            )
-            
-            # Freeze the base model layers
-            base_model.trainable = False
-            
-            # Create the model
-            self.model = models.Sequential([
-                base_model,
-                layers.GlobalAveragePooling2D(),
-                layers.Dropout(0.2),
-                layers.Dense(512, activation='relu'),
-                layers.Dropout(0.3),
-                layers.Dense(256, activation='relu'),
-                layers.Dropout(0.2),
-                layers.Dense(self.num_classes, activation='softmax')
-            ])
-        else:
-            # Custom CNN architecture
-            self.model = models.Sequential([
-                layers.Conv2D(32, (3, 3), activation='relu', input_shape=(self.img_size[0], self.img_size[1], 3)),
-                layers.MaxPooling2D((2, 2)),
-                layers.Conv2D(64, (3, 3), activation='relu'),
-                layers.MaxPooling2D((2, 2)),
-                layers.Conv2D(128, (3, 3), activation='relu'),
-                layers.MaxPooling2D((2, 2)),
-                layers.Conv2D(128, (3, 3), activation='relu'),
-                layers.MaxPooling2D((2, 2)),
-                layers.Flatten(),
-                layers.Dropout(0.5),
-                layers.Dense(512, activation='relu'),
-                layers.Dropout(0.3),
-                layers.Dense(self.num_classes, activation='softmax')
-            ])
+        features = []
         
-        # Compile the model
-        self.model.compile(
-            optimizer=optimizers.Adam(learning_rate=self.learning_rate),
-            loss='categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
-        )
-        
-        return self.model
+        for img in images:
+            # Convert to RGB if needed
+            if len(img.shape) == 3:
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            else:
+                img_rgb = img
+                
+            # Color histogram features
+            hist_r = cv2.calcHist([img_rgb], [0], None, [256], [0, 256]).flatten()
+            hist_g = cv2.calcHist([img_rgb], [1], None, [256], [0, 256]).flatten()
+            hist_b = cv2.calcHist([img_rgb], [2], None, [256], [0, 256]).flatten()
+            
+            # Normalize histograms
+            hist_r = hist_r / np.sum(hist_r)
+            hist_g = hist_g / np.sum(hist_g)
+            hist_b = hist_b / np.sum(hist_b)
+            
+            # Texture features (GLCM-like)
+            gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+            
+            # Edge features
+            edges = cv2.Canny(gray, 50, 150)
+            edge_density = np.sum(edges > 0) / (edges.shape[0] * edges.shape[1])
+            
+            # Local Binary Pattern (simplified)
+            lbp_features = self._compute_lbp(gray)
+            
+            # Combine all features
+            feature_vector = np.concatenate([
+                hist_r, hist_g, hist_b,  # Color features (768)
+                [edge_density],          # Edge density (1)
+                lbp_features             # LBP features (256)
+            ])
+            
+            features.append(feature_vector)
+            
+        return np.array(features)
     
-    def train(self, train_generator, validation_generator, epochs=50, batch_size=32):
+    def _compute_lbp(self, gray_img):
+        """
+        Compute Local Binary Pattern histogram
+        """
+        # Simplified LBP implementation
+        height, width = gray_img.shape
+        lbp = np.zeros((height, width), dtype=np.uint8)
+        
+        for i in range(1, height-1):
+            for j in range(1, width-1):
+                center = gray_img[i, j]
+                code = 0
+                # 8-neighbor LBP
+                neighbors = [
+                    gray_img[i-1, j-1], gray_img[i-1, j], gray_img[i-1, j+1],
+                    gray_img[i, j+1], gray_img[i+1, j+1], gray_img[i+1, j],
+                    gray_img[i+1, j-1], gray_img[i, j-1]
+                ]
+                
+                for k, neighbor in enumerate(neighbors):
+                    if neighbor >= center:
+                        code |= (1 << k)
+                
+                lbp[i, j] = code
+        
+        # Compute histogram
+        hist, _ = np.histogram(lbp.flatten(), bins=256, range=(0, 256))
+        return hist / np.sum(hist)
+    
+    def create_model(self):
+        """
+        Create the specified model
+        """
+        if self.model_type == 'random_forest':
+            self.model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+        elif self.model_type == 'svm':
+            self.model = SVC(
+                kernel='rbf',
+                C=1.0,
+                random_state=42,
+                probability=True
+            )
+        elif self.model_type == 'knn':
+            self.model = KNeighborsClassifier(
+                n_neighbors=5,
+                weights='uniform'
+            )
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")
+    
+    def train(self, X_train, y_train, X_val=None, y_val=None):
         """
         Train the model
         
         Args:
-            train_generator: Training data generator
-            validation_generator: Validation data generator
-            epochs (int): Number of training epochs
-            batch_size (int): Batch size
-            
-        Returns:
-            tensorflow.keras.callbacks.History: Training history
+            X_train, y_train: Training data
+            X_val, y_val: Validation data (optional)
         """
-        # Callbacks
-        early_stopping = callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=10,
-            restore_best_weights=True,
-            verbose=1
-        )
+        print(f"Training {self.model_type} model...")
         
-        reduce_lr = callbacks.ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.2,
-            patience=5,
-            min_lr=1e-7,
-            verbose=1
-        )
+        # Extract features
+        print("Extracting features from training images...")
+        X_train_features = self.extract_features(X_train)
         
-        model_checkpoint = callbacks.ModelCheckpoint(
-            'models/best_model.h5',
-            monitor='val_accuracy',
-            save_best_only=True,
-            verbose=1
-        )
+        # Scale features
+        X_train_scaled = self.scaler.fit_transform(X_train_features)
+        
+        # Create and train model
+        self.create_model()
         
         # Train the model
-        self.history = self.model.fit(
-            train_generator,
-            epochs=epochs,
-            validation_data=validation_generator,
-            callbacks=[early_stopping, reduce_lr, model_checkpoint],
-            verbose=1
-        )
+        self.model.fit(X_train_scaled, y_train)
         
-        return self.history
+        # Evaluate on training set
+        train_pred = self.model.predict(X_train_scaled)
+        train_accuracy = accuracy_score(y_train, train_pred)
+        
+        print(f"Training accuracy: {train_accuracy:.4f}")
+        
+        # Evaluate on validation set if provided
+        if X_val is not None and y_val is not None:
+            print("Extracting features from validation images...")
+            X_val_features = self.extract_features(X_val)
+            X_val_scaled = self.scaler.transform(X_val_features)
+            
+            val_pred = self.model.predict(X_val_scaled)
+            val_accuracy = accuracy_score(y_val, val_pred)
+            print(f"Validation accuracy: {val_accuracy:.4f}")
+            
+            # Store training history
+            self.training_history.append({
+                'epoch': 1,
+                'train_accuracy': train_accuracy,
+                'val_accuracy': val_accuracy,
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        print("Training completed!")
     
-    def evaluate_model(self, test_generator):
+    def evaluate(self, X_test, y_test):
         """
         Evaluate the model on test data
         
         Args:
-            test_generator: Test data generator
+            X_test, y_test: Test data
             
         Returns:
             dict: Evaluation metrics
         """
-        # Evaluate the model
-        test_loss, test_accuracy, test_precision, test_recall = self.model.evaluate(test_generator, verbose=0)
+        print("Evaluating model...")
         
-        # Calculate F1 score
-        test_f1 = 2 * (test_precision * test_recall) / (test_precision + test_recall)
+        # Extract features
+        X_test_features = self.extract_features(X_test)
+        X_test_scaled = self.scaler.transform(X_test_features)
         
-        # Get predictions
-        predictions = self.model.predict(test_generator)
-        y_pred = np.argmax(predictions, axis=1)
+        # Make predictions
+        y_pred = self.model.predict(X_test_scaled)
+        y_pred_proba = self.model.predict_proba(X_test_scaled)
         
-        # Get true labels - handle different generator types
-        if hasattr(test_generator, 'classes'):
-            # Standard Keras generator
-            y_true = test_generator.classes
-        else:
-            # Custom generator - extract labels from the generator
-            y_true = []
-            test_generator.reset()
-            for i in range(len(test_generator)):
-                _, batch_labels = test_generator[i]
-                y_true.extend(np.argmax(batch_labels, axis=1))
-            y_true = np.array(y_true)
+        # Calculate metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, average='weighted')
+        recall = recall_score(y_test, y_pred, average='weighted')
+        f1 = f1_score(y_test, y_pred, average='weighted')
         
-        # Calculate additional metrics
-        from sklearn.metrics import classification_report, confusion_matrix
-        
-        classification_rep = classification_report(y_true, y_pred, target_names=self.class_names, output_dict=True)
-        conf_matrix = confusion_matrix(y_true, y_pred)
+        # Confusion matrix
+        cm = confusion_matrix(y_test, y_pred)
         
         metrics = {
-            'test_loss': test_loss,
-            'test_accuracy': test_accuracy,
-            'test_precision': test_precision,
-            'test_recall': test_recall,
-            'test_f1': test_f1,
-            'classification_report': classification_rep,
-            'confusion_matrix': conf_matrix.tolist()
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'confusion_matrix': cm,
+            'predictions': y_pred,
+            'probabilities': y_pred_proba
         }
+        
+        print(f"Test Accuracy: {accuracy:.4f}")
+        print(f"Test Precision: {precision:.4f}")
+        print(f"Test Recall: {recall:.4f}")
+        print(f"Test F1-Score: {f1:.4f}")
         
         return metrics
     
-    def plot_training_history(self, save_path='training_history.png'):
+    def predict(self, image):
         """
-        Plot training history
+        Make prediction on a single image
         
         Args:
-            save_path (str): Path to save the plot
-        """
-        if self.history is None:
-            print("No training history available. Train the model first.")
-            return
-        
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        
-        # Accuracy
-        axes[0, 0].plot(self.history.history['accuracy'], label='Training Accuracy')
-        axes[0, 0].plot(self.history.history['val_accuracy'], label='Validation Accuracy')
-        axes[0, 0].set_title('Model Accuracy')
-        axes[0, 0].set_xlabel('Epoch')
-        axes[0, 0].set_ylabel('Accuracy')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
-        
-        # Loss
-        axes[0, 1].plot(self.history.history['loss'], label='Training Loss')
-        axes[0, 1].plot(self.history.history['val_loss'], label='Validation Loss')
-        axes[0, 1].set_title('Model Loss')
-        axes[0, 1].set_xlabel('Epoch')
-        axes[0, 1].set_ylabel('Loss')
-        axes[0, 1].legend()
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # Precision
-        axes[1, 0].plot(self.history.history['precision'], label='Training Precision')
-        axes[1, 0].plot(self.history.history['val_precision'], label='Validation Precision')
-        axes[1, 0].set_title('Model Precision')
-        axes[1, 0].set_xlabel('Epoch')
-        axes[1, 0].set_ylabel('Precision')
-        axes[1, 0].legend()
-        axes[1, 0].grid(True, alpha=0.3)
-        
-        # Recall
-        axes[1, 1].plot(self.history.history['recall'], label='Training Recall')
-        axes[1, 1].plot(self.history.history['val_recall'], label='Validation Recall')
-        axes[1, 1].set_title('Model Recall')
-        axes[1, 1].set_xlabel('Epoch')
-        axes[1, 1].set_ylabel('Recall')
-        axes[1, 1].legend()
-        axes[1, 1].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    
-    def save_model(self, model_path='models/image_classifier.h5'):
-        """
-        Save the trained model
-        
-        Args:
-            model_path (str): Path to save the model
-        """
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        self.model.save(model_path)
-        
-        # Save model metadata
-        metadata = {
-            'img_size': self.img_size,
-            'num_classes': self.num_classes,
-            'class_names': self.class_names,
-            'learning_rate': self.learning_rate,
-            'created_at': datetime.now().isoformat()
-        }
-        
-        metadata_path = model_path.replace('.h5', '_metadata.json')
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-    
-    def load_model(self, model_path='models/image_classifier.h5'):
-        """
-        Load a trained model
-        
-        Args:
-            model_path (str): Path to the model file
-        """
-        self.model = models.load_model(model_path)
-        
-        # Load metadata
-        metadata_path = model_path.replace('.h5', '_metadata.json')
-        if os.path.exists(metadata_path):
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-                self.img_size = tuple(metadata['img_size'])
-                self.num_classes = metadata['num_classes']
-                self.class_names = metadata['class_names']
-                self.learning_rate = metadata['learning_rate']
-    
-    def retrain_model(self, new_data_generator, epochs=10):
-        """
-        Retrain the model with new data
-        
-        Args:
-            new_data_generator: New data generator
-            epochs (int): Number of training epochs
+            image: Input image
             
         Returns:
-            tensorflow.keras.callbacks.History: Training history
+            tuple: (prediction, probability)
         """
         if self.model is None:
-            raise ValueError("No model loaded. Please load a model first.")
+            raise ValueError("Model not trained yet!")
         
-        # Unfreeze some layers for fine-tuning
-        for layer in self.model.layers[-10:]:
-            layer.trainable = True
+        # Extract features
+        features = self.extract_features([image])
+        features_scaled = self.scaler.transform(features)
         
-        # Recompile with lower learning rate for fine-tuning
-        self.model.compile(
-            optimizer=optimizers.Adam(learning_rate=self.learning_rate * 0.1),
-            loss='categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
-        )
+        # Make prediction
+        prediction = self.model.predict(features_scaled)[0]
+        probability = self.model.predict_proba(features_scaled)[0]
         
-        # Callbacks for retraining
-        early_stopping = callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=5,
-            restore_best_weights=True,
-            verbose=1
-        )
+        return prediction, probability
+    
+    def plot_confusion_matrix(self, cm, save_path=None):
+        """
+        Plot confusion matrix
+        """
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                   xticklabels=self.class_names,
+                   yticklabels=self.class_names)
+        plt.title('Confusion Matrix')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
         
-        # Retrain
-        retrain_history = self.model.fit(
-            new_data_generator,
-            epochs=epochs,
-            callbacks=[early_stopping],
-            verbose=1
-        )
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
+    
+    def plot_classification_report(self, y_true, y_pred, save_path=None):
+        """
+        Plot classification report
+        """
+        report = classification_report(y_true, y_pred, 
+                                     target_names=self.class_names,
+                                     output_dict=True)
         
-        return retrain_history 
+        # Convert to DataFrame for easier plotting
+        report_df = pd.DataFrame(report).transpose()
+        
+        plt.figure(figsize=(10, 6))
+        sns.heatmap(report_df.iloc[:-1, :].astype(float), 
+                   annot=True, cmap='YlOrRd', fmt='.3f')
+        plt.title('Classification Report')
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
+    
+    def save_model(self, filepath):
+        """
+        Save the trained model
+        """
+        if self.model is None:
+            raise ValueError("No model to save!")
+        
+        model_data = {
+            'model': self.model,
+            'scaler': self.scaler,
+            'model_type': self.model_type,
+            'class_names': self.class_names,
+            'training_history': self.training_history
+        }
+        
+        joblib.dump(model_data, filepath)
+        print(f"Model saved to {filepath}")
+    
+    def load_model(self, filepath):
+        """
+        Load a trained model
+        """
+        model_data = joblib.load(filepath)
+        
+        self.model = model_data['model']
+        self.scaler = model_data['scaler']
+        self.model_type = model_data['model_type']
+        self.class_names = model_data['class_names']
+        self.training_history = model_data.get('training_history', [])
+        
+        print(f"Model loaded from {filepath}")
+    
+    def get_model_info(self):
+        """
+        Get information about the model
+        """
+        if self.model is None:
+            return {"status": "No model trained"}
+        
+        info = {
+            "model_type": self.model_type,
+            "class_names": self.class_names,
+            "is_trained": True,
+            "training_history": self.training_history
+        }
+        
+        if hasattr(self.model, 'n_estimators'):
+            info["n_estimators"] = self.model.n_estimators
+        if hasattr(self.model, 'n_neighbors'):
+            info["n_neighbors"] = self.model.n_neighbors
+            
+        return info 

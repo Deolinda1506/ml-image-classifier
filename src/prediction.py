@@ -1,269 +1,314 @@
 import os
 import numpy as np
-import cv2
-import tensorflow as tf
-from PIL import Image
-import json
+import sqlite3
 from datetime import datetime
-import time
-import io
+import joblib
+from preprocessing import ImagePreprocessor
+import warnings
+warnings.filterwarnings('ignore')
 
-class ImagePredictor:
-    def __init__(self, model_path='models/image_classifier.h5'):
+class PredictionService:
+    def __init__(self, model_path=None):
         """
-        Initialize the image predictor
+        Initialize the prediction service
         
         Args:
-            model_path (str): Path to the trained model
+            model_path (str): Path to the trained model file
         """
         self.model = None
+        self.scaler = None
         self.class_names = ['cat', 'dog']
-        self.img_size = (224, 224)
-        self.load_model(model_path)
+        self.preprocessor = ImagePreprocessor()
+        
+        if model_path and os.path.exists(model_path):
+            self.load_model(model_path)
     
     def load_model(self, model_path):
         """
-        Load the trained model
+        Load a trained model
         
         Args:
             model_path (str): Path to the model file
         """
         try:
-            self.model = tf.keras.models.load_model(model_path)
+            model_data = joblib.load(model_path)
+            self.model = model_data['model']
+            self.scaler = model_data['scaler']
+            self.class_names = model_data['class_names']
             print(f"Model loaded successfully from {model_path}")
-            
-            # Load metadata if available
-            metadata_path = model_path.replace('.h5', '_metadata.json')
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                    self.img_size = tuple(metadata['img_size'])
-                    self.class_names = metadata['class_names']
         except Exception as e:
             print(f"Error loading model: {e}")
             raise
     
-    def preprocess_image(self, image_path):
+    def predict_image(self, image_path):
         """
-        Preprocess a single image for prediction
+        Make prediction on an image file
         
         Args:
             image_path (str): Path to the image file
-            
-        Returns:
-            numpy.ndarray: Preprocessed image
-        """
-        # Load image
-        img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError(f"Could not load image from {image_path}")
-        
-        # Convert BGR to RGB
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Resize image
-        img = cv2.resize(img, self.img_size)
-        
-        # Normalize pixel values
-        img = img.astype(np.float32) / 255.0
-        
-        # Add batch dimension
-        img = np.expand_dims(img, axis=0)
-        
-        return img
-    
-    def predict(self, image_path, return_probabilities=False):
-        """
-        Make prediction on a single image
-        
-        Args:
-            image_path (str): Path to the image file
-            return_probabilities (bool): Whether to return class probabilities
             
         Returns:
             dict: Prediction results
         """
-        start_time = time.time()
+        if self.model is None:
+            raise ValueError("No model loaded!")
         
         try:
-            # Preprocess image
-            img = self.preprocess_image(image_path)
+            # Load and preprocess image
+            image = self.preprocessor.load_and_preprocess_image(image_path)
             
             # Make prediction
-            predictions = self.model.predict(img, verbose=0)
+            prediction, probability = self.model.predict(image)
             
-            # Get predicted class and confidence
-            predicted_class_idx = np.argmax(predictions[0])
-            predicted_class = self.class_names[predicted_class_idx]
-            confidence = float(predictions[0][predicted_class_idx])
+            # Get class name
+            predicted_class = self.class_names[prediction]
+            confidence = np.max(probability)
             
-            # Calculate prediction time
-            prediction_time = time.time() - start_time
+            # Log prediction
+            self._log_prediction(image_path, predicted_class, confidence)
             
-            result = {
-                'predicted_class': predicted_class,
-                'confidence': confidence,
-                'prediction_time': prediction_time,
-                'timestamp': datetime.now().isoformat(),
+            return {
+                'prediction': predicted_class,
+                'confidence': float(confidence),
+                'probabilities': {
+                    'cat': float(probability[0]),
+                    'dog': float(probability[1])
+                },
                 'image_path': image_path
             }
-            
-            if return_probabilities:
-                result['probabilities'] = {
-                    class_name: float(prob) 
-                    for class_name, prob in zip(self.class_names, predictions[0])
-                }
-            
-            return result
             
         except Exception as e:
-            return {
-                'error': str(e),
-                'prediction_time': time.time() - start_time,
-                'timestamp': datetime.now().isoformat(),
-                'image_path': image_path
-            }
+            print(f"Error making prediction: {e}")
+            raise
     
-    def predict_batch(self, image_paths, return_probabilities=False):
+    def predict_uploaded_image(self, image_file):
+        """
+        Make prediction on an uploaded image file
+        
+        Args:
+            image_file: Uploaded file object
+            
+        Returns:
+            dict: Prediction results
+        """
+        if self.model is None:
+            raise ValueError("No model loaded!")
+        
+        try:
+            # Preprocess uploaded image
+            image = self.preprocessor.preprocess_uploaded_image(image_file)
+            
+            # Make prediction
+            prediction, probability = self.model.predict(image)
+            
+            # Get class name
+            predicted_class = self.class_names[prediction]
+            confidence = np.max(probability)
+            
+            # Log prediction
+            self._log_prediction("uploaded_file", predicted_class, confidence)
+            
+            return {
+                'prediction': predicted_class,
+                'confidence': float(confidence),
+                'probabilities': {
+                    'cat': float(probability[0]),
+                    'dog': float(probability[1])
+                }
+            }
+            
+        except Exception as e:
+            print(f"Error making prediction: {e}")
+            raise
+    
+    def predict_batch(self, image_paths):
         """
         Make predictions on multiple images
         
         Args:
             image_paths (list): List of image file paths
-            return_probabilities (bool): Whether to return class probabilities
             
         Returns:
             list: List of prediction results
         """
+        if self.model is None:
+            raise ValueError("No model loaded!")
+        
         results = []
         
         for image_path in image_paths:
-            result = self.predict(image_path, return_probabilities)
-            results.append(result)
+            try:
+                result = self.predict_image(image_path)
+                results.append(result)
+            except Exception as e:
+                print(f"Error predicting {image_path}: {e}")
+                results.append({
+                    'prediction': 'error',
+                    'confidence': 0.0,
+                    'error': str(e),
+                    'image_path': image_path
+                })
         
         return results
     
-    def predict_from_bytes(self, image_bytes, return_probabilities=False):
+    def _log_prediction(self, image_path, prediction, confidence):
         """
-        Make prediction from image bytes (for API usage)
+        Log prediction to database
         
         Args:
-            image_bytes (bytes): Image data as bytes
-            return_probabilities (bool): Whether to return class probabilities
+            image_path (str): Path to the image
+            prediction (str): Predicted class
+            confidence (float): Prediction confidence
+        """
+        try:
+            conn = sqlite3.connect('predictions.db')
+            cursor = conn.cursor()
+            
+            # Create table if not exists
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    image_path TEXT,
+                    prediction TEXT,
+                    confidence REAL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Insert prediction
+            cursor.execute('''
+                INSERT INTO predictions (image_path, prediction, confidence)
+                VALUES (?, ?, ?)
+            ''', (image_path, prediction, confidence))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"Error logging prediction: {e}")
+    
+    def get_prediction_history(self, limit=100):
+        """
+        Get prediction history from database
+        
+        Args:
+            limit (int): Maximum number of records to return
             
         Returns:
-            dict: Prediction results
+            list: List of prediction records
         """
-        start_time = time.time()
-        
         try:
-            # Convert bytes to PIL Image
-            image = Image.open(io.BytesIO(image_bytes))
+            conn = sqlite3.connect('predictions.db')
+            cursor = conn.cursor()
             
-            # Convert to numpy array
-            img = np.array(image)
+            cursor.execute('''
+                SELECT image_path, prediction, confidence, timestamp
+                FROM predictions
+                ORDER BY timestamp DESC
+                LIMIT ?
+            ''', (limit,))
             
-            # Convert RGBA to RGB if necessary
-            if img.shape[2] == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            records = cursor.fetchall()
+            conn.close()
             
-            # Resize image
-            img = cv2.resize(img, self.img_size)
-            
-            # Normalize pixel values
-            img = img.astype(np.float32) / 255.0
-            
-            # Add batch dimension
-            img = np.expand_dims(img, axis=0)
-            
-            # Make prediction
-            predictions = self.model.predict(img, verbose=0)
-            
-            # Get predicted class and confidence
-            predicted_class_idx = np.argmax(predictions[0])
-            predicted_class = self.class_names[predicted_class_idx]
-            confidence = float(predictions[0][predicted_class_idx])
-            
-            # Calculate prediction time
-            prediction_time = time.time() - start_time
-            
-            result = {
-                'predicted_class': predicted_class,
-                'confidence': confidence,
-                'prediction_time': prediction_time,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            if return_probabilities:
-                result['probabilities'] = {
-                    class_name: float(prob) 
-                    for class_name, prob in zip(self.class_names, predictions[0])
+            return [
+                {
+                    'image_path': record[0],
+                    'prediction': record[1],
+                    'confidence': record[2],
+                    'timestamp': record[3]
                 }
-            
-            return result
+                for record in records
+            ]
             
         except Exception as e:
-            return {
-                'error': str(e),
-                'prediction_time': time.time() - start_time,
-                'timestamp': datetime.now().isoformat()
-            }
+            print(f"Error getting prediction history: {e}")
+            return []
     
-    def get_model_info(self):
+    def get_prediction_stats(self):
         """
-        Get information about the loaded model
+        Get prediction statistics
         
         Returns:
-            dict: Model information
-        """
-        if self.model is None:
-            return {'error': 'No model loaded'}
-        
-        return {
-            'model_type': 'CNN Image Classifier',
-            'input_shape': self.model.input_shape,
-            'output_shape': self.model.output_shape,
-            'num_classes': len(self.class_names),
-            'class_names': self.class_names,
-            'total_params': self.model.count_params(),
-            'trainable_params': sum([tf.keras.backend.count_params(w) for w in self.model.trainable_weights])
-        }
-    
-    def validate_image(self, image_path):
-        """
-        Validate if an image can be processed
-        
-        Args:
-            image_path (str): Path to the image file
-            
-        Returns:
-            dict: Validation result
+            dict: Prediction statistics
         """
         try:
-            # Check if file exists
-            if not os.path.exists(image_path):
-                return {'valid': False, 'error': 'File does not exist'}
+            conn = sqlite3.connect('predictions.db')
+            cursor = conn.cursor()
             
-            # Check file size
-            file_size = os.path.getsize(image_path)
-            if file_size == 0:
-                return {'valid': False, 'error': 'File is empty'}
+            # Total predictions
+            cursor.execute('SELECT COUNT(*) FROM predictions')
+            total_predictions = cursor.fetchone()[0]
             
-            # Try to load image
-            img = cv2.imread(image_path)
-            if img is None:
-                return {'valid': False, 'error': 'Could not load image'}
+            # Predictions by class
+            cursor.execute('''
+                SELECT prediction, COUNT(*) 
+                FROM predictions 
+                GROUP BY prediction
+            ''')
+            class_counts = dict(cursor.fetchall())
             
-            # Check image dimensions
-            height, width, channels = img.shape
-            if channels != 3:
-                return {'valid': False, 'error': 'Image must have 3 channels (RGB)'}
+            # Average confidence
+            cursor.execute('SELECT AVG(confidence) FROM predictions')
+            avg_confidence = cursor.fetchone()[0] or 0.0
+            
+            # Recent predictions (last 24 hours)
+            cursor.execute('''
+                SELECT COUNT(*) 
+                FROM predictions 
+                WHERE timestamp > datetime('now', '-1 day')
+            ''')
+            recent_predictions = cursor.fetchone()[0]
+            
+            conn.close()
             
             return {
-                'valid': True,
-                'file_size': file_size,
-                'dimensions': {'width': width, 'height': height, 'channels': channels}
+                'total_predictions': total_predictions,
+                'class_distribution': class_counts,
+                'average_confidence': round(avg_confidence, 3),
+                'recent_predictions_24h': recent_predictions
             }
             
         except Exception as e:
-            return {'valid': False, 'error': str(e)} 
+            print(f"Error getting prediction stats: {e}")
+            return {
+                'total_predictions': 0,
+                'class_distribution': {},
+                'average_confidence': 0.0,
+                'recent_predictions_24h': 0
+            }
+    
+    def save_uploaded_files_for_retraining(self, uploaded_files, save_dir='uploads'):
+        """
+        Save uploaded files for retraining
+        
+        Args:
+            uploaded_files (list): List of uploaded file objects
+            save_dir (str): Directory to save files
+            
+        Returns:
+            list: List of saved file paths
+        """
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        
+        saved_paths = []
+        
+        for i, file in enumerate(uploaded_files):
+            try:
+                # Generate unique filename
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"upload_{timestamp}_{i}.jpg"
+                file_path = os.path.join(save_dir, filename)
+                
+                # Save file
+                with open(file_path, 'wb') as f:
+                    f.write(file.read())
+                
+                saved_paths.append(file_path)
+                print(f"Saved uploaded file: {file_path}")
+                
+            except Exception as e:
+                print(f"Error saving uploaded file: {e}")
+        
+        return saved_paths 

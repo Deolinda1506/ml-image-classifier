@@ -1,362 +1,344 @@
-# 🐱🐶 ML Image Classifier - Complete ML Pipeline
+# ML Image Classifier Pipeline
 
-A comprehensive Machine Learning pipeline for image classification of cats and dogs, featuring end-to-end ML processes from data preprocessing to production deployment with monitoring and retraining capabilities.
+A comprehensive Machine Learning pipeline for image classification (Cat vs Dog) with web interface, API endpoints, monitoring, and retraining capabilities.
 
-## 📋 Project Overview
+## 🎯 Project Overview
 
-This project demonstrates a complete ML pipeline including:
-- **Data Acquisition & Preprocessing**: Image loading, augmentation, and analysis
-- **Model Creation**: CNN with pre-trained MobileNetV2 architecture
-- **Model Training**: Optimized training with callbacks and regularization
-- **Model Evaluation**: Comprehensive metrics (Accuracy, Precision, Recall, F1-Score)
-- **API Development**: Flask REST API for predictions and model management
-- **Web Dashboard**: Interactive Dash dashboard for monitoring and control
+This project demonstrates a complete end-to-end Machine Learning pipeline including:
+- **Data Processing**: Image preprocessing and augmentation
+- **Model Training**: Custom CNN and transfer learning models
+- **Web Application**: Modern UI for predictions and retraining
+- **API Endpoints**: RESTful API for model serving
+- **Monitoring**: Real-time system monitoring and metrics
 - **Load Testing**: Locust-based performance testing
-- **Retraining Pipeline**: Automated model retraining with new data
+- **Retraining**: Automated model retraining with new data
+- **Local Deployment**: Easy setup and deployment
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Data Layer    │    │  Model Layer    │    │  API Layer      │
-│                 │    │                 │    │                 │
-│ • Image Loading │───▶│ • CNN Model     │───▶│ • Flask API     │
-│ • Preprocessing │    │ • Training      │    │ • Predictions   │
-│ • Augmentation  │    │ • Evaluation    │    │ • Retraining    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │  Dashboard      │
-                       │                 │
-                       │ • Monitoring    │
-                       │ • Visualizations│
-                       │ • Controls      │
-                       └─────────────────┘
+ml-image-classifier-1/
+│
+├── app.py                 # Main Flask application
+├── locustfile.py         # Load testing configuration
+├── requirements.txt      # Python dependencies
+├── README.md            # Project documentation
+│
+├── src/                 # Core ML modules
+│   ├── preprocessing.py # Data preprocessing and augmentation
+│   ├── model.py        # Model architecture and training
+│   └── prediction.py   # Prediction service and utilities
+│
+├── data/               # Dataset
+│   ├── train/         # Training images
+│   └── test/          # Test images
+│
+├── models/            # Trained models
+│   ├── best_model.h5  # Best trained model
+│   └── model_metadata.json # Model metadata
+│
+├── notebook/          # Jupyter notebooks
+│   └── ml-image-classifier.ipynb # Complete ML pipeline
+│
+├── templates/         # HTML templates
+│   └── index.html    # Main dashboard
+│
+├── static/           # Static assets
+│   ├── css/         # Stylesheets
+│   └── js/          # JavaScript files
+│
+└── uploads/          # Uploaded files for retraining
 ```
 
-## 📁 Directory Structure
+## 🚀 Features
 
-```
-ml-image-classifier/
-│
-├── README.md                 # This file
-├── requirements.txt          # Python dependencies
-├── locustfile.py           # Load testing script
-│
-├── src/                    # Source code
-│   ├── preprocessing.py    # Data preprocessing
-│   ├── model.py           # Model architecture & training
-│   └── prediction.py      # Prediction functionality
-│
-├── notebook/               # Jupyter notebooks
-│   ├── ml_pipeline.py     # Complete ML pipeline (Python script)
-│   ├── ml_pipeline.ipynb  # Complete ML pipeline (Jupyter notebook)
-│   └── convert_to_notebook.py  # Convert script to notebook
-│
-├── data/                   # Dataset
-│   ├── train/             # Training images
-│   └── test/              # Test images
-│
-├── models/                 # Trained models
-├── uploads/               # Uploaded files
-│
-├── app.py                 # Flask API
-└── dashboard.py           # Dash dashboard
-```
+### Core ML Pipeline
+- **Data Acquisition**: Automated data loading from directory structure
+- **Data Processing**: Image preprocessing, augmentation, and normalization
+- **Model Creation**: Custom CNN and transfer learning models (VGG16, ResNet50)
+- **Model Testing**: Comprehensive evaluation with multiple metrics
+- **Model Retraining**: Automated retraining with new data uploads
 
-## 🚀 Quick Start
+### Web Application
+- **Modern UI**: Responsive Bootstrap-based interface
+- **Real-time Monitoring**: System metrics and model performance
+- **Prediction Interface**: Upload images and get instant predictions
+- **Retraining Interface**: Upload new data and trigger model retraining
+- **Visualization**: Training history, confusion matrix, and data analysis
 
-### Prerequisites
+### API Endpoints
+- `POST /api/predict` - Make predictions on uploaded images
+- `POST /api/upload` - Upload files for retraining
+- `POST /api/retrain` - Trigger model retraining
+- `GET /api/statistics` - Get system statistics
+- `GET /api/predictions` - Get recent predictions
+- `GET /api/model-info` - Get model information
+- `GET /api/health` - Health check endpoint
 
+### Monitoring & Performance
+- **System Monitoring**: CPU, memory, and disk usage
+- **Model Metrics**: Accuracy, precision, recall, F1-score
+- **Load Testing**: Locust-based performance testing
+- **Database Logging**: SQLite database for predictions and training logs
+
+## 📋 Requirements
+
+### System Requirements
 - Python 3.8+
-- Git
+- 4GB+ RAM (for model training)
+- 2GB+ free disk space
 
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd ml-image-classifier
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the application**
-   ```bash
-   # Terminal 1: Start API
-   python app.py
-   
-   # Terminal 2: Start Dashboard
-   python dashboard.py
-   ```
-
-## 📊 Features
-
-### 1. Data Preprocessing
-- **Image Loading**: Support for JPG, PNG, JPEG formats
-- **Data Augmentation**: Rotation, scaling, flipping, color jittering
-- **Dataset Analysis**: Class distribution, image size analysis
-- **Validation**: Image format and quality checks
-
-### 2. Model Architecture
-- **Base Model**: Pre-trained MobileNetV2
-- **Custom Layers**: Dropout, Dense layers for classification
-- **Optimization**: Adam optimizer, learning rate scheduling
-- **Regularization**: Dropout layers, early stopping
-
-### 3. Training Features
-- **Callbacks**: Early stopping, model checkpointing, learning rate reduction
-- **Validation**: 20% validation split
-- **Monitoring**: Real-time training progress
-- **Metrics**: Accuracy, Precision, Recall, F1-Score
-
-### 4. API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | API documentation |
-| `/predict` | POST | Make predictions on images |
-| `/status` | GET | Get model status and metrics |
-| `/train` | POST | Start model training |
-| `/training-status` | GET | Get training progress |
-| `/upload-data` | POST | Upload new data for retraining |
-| `/retrain` | POST | Retrain model with new data |
-| `/health` | GET | Health check |
-
-### 5. Dashboard Features
-- **Real-time Monitoring**: Model status, uptime, latency
-- **Interactive Visualizations**: Metrics charts, confusion matrix
-- **Training Controls**: Start/stop training, progress tracking
-- **Data Upload**: Drag-and-drop interface for new data
-- **Prediction Interface**: Upload images for instant predictions
-
-## 🔧 Usage
-
-### Training the Model
-
-1. **Using Jupyter Notebook**
-   ```python
-   # Option 1: Use the Python script directly
-   cd notebook
-   python ml_pipeline.py
-   
-   # Option 2: Convert to notebook and run
-   python convert_to_notebook.py
-   # Then open ml_pipeline.ipynb in Jupyter
-   ```
-
-2. **Using API**
-   ```bash
-   curl -X POST http://localhost:5000/train
-   ```
-
-3. **Using Dashboard**
-   - Open http://localhost:8050
-   - Click "Start Training" button
-
-### Making Predictions
-
-1. **Via API**
-   ```bash
-   curl -X POST -F "image=@path/to/image.jpg" http://localhost:5000/predict
-   ```
-
-2. **Via Dashboard**
-   - Upload image in the Predictions tab
-   - View results instantly
-
-### Retraining with New Data
-
-1. **Upload Data**
-   ```bash
-   curl -X POST -F "files[]=@new_image1.jpg" -F "files[]=@new_image2.jpg" \
-        http://localhost:5000/upload-data
-   ```
-
-2. **Trigger Retraining**
-   ```bash
-   curl -X POST -H "Content-Type: application/json" \
-        -d '{"files": ["path1", "path2"], "labels": ["cat", "dog"]}' \
-        http://localhost:5000/retrain
-   ```
-
-## 📈 Performance Testing
-
-### Load Testing with Locust
-
-1. **Start the API**
-   ```bash
-   python app.py
-   ```
-
-2. **Run Load Test**
-   ```bash
-   locust -f locustfile.py --host=http://localhost:5000
-   ```
-
-3. **Access Locust Web UI**
-   - Open http://localhost:8089
-   - Set number of users and spawn rate
-   - Start the test
-
-### Scaling with Multiple Instances
-
-```bash
-# Run multiple API instances on different ports
-python app.py --port 5000 &
-python app.py --port 5001 &
-python app.py --port 5002 &
-
-# Monitor performance
-ps aux | grep python
+### Python Dependencies
+```
+tensorflow==2.13.0
+flask==2.3.2
+opencv-python==4.8.0.76
+pillow==10.0.0
+numpy==1.24.3
+pandas==2.0.3
+scikit-learn==1.3.0
+matplotlib==3.7.2
+seaborn==0.12.2
+locust==2.15.1
+psutil==5.9.5
 ```
 
-## 📊 Model Performance
+## 🛠️ Installation & Setup
 
-### Evaluation Metrics
-- **Accuracy**: 95.2%
-- **Precision**: 94.8%
-- **Recall**: 95.6%
-- **F1-Score**: 95.2%
-
-### Performance Benchmarks
-- **Prediction Latency**: ~150ms average
-- **Throughput**: 100+ requests/second
-- **Model Size**: ~14MB
-- **Memory Usage**: ~512MB
-
-## 🔍 Monitoring & Visualization
-
-### Real-time Metrics
-- Model uptime and health
-- Prediction latency trends
-- Request throughput
-- Error rates
-
-### Data Visualizations
-- Class distribution analysis
-- Training history plots
-- Confusion matrix
-- Feature importance (Grad-CAM)
-
-## 🛠️ Development
-
-### Adding New Features
-
-1. **New Model Architecture**
-   ```python
-   # Modify src/model.py
-   def build_custom_model(self):
-       # Add your custom architecture
-       pass
-   ```
-
-2. **New API Endpoints**
-   ```python
-   # Add to app.py
-   @app.route('/new-endpoint', methods=['POST'])
-   def new_endpoint():
-       # Your endpoint logic
-       pass
-   ```
-
-3. **New Dashboard Components**
-   ```python
-   # Add to dashboard.py
-   @app.callback(
-       Output('new-component', 'children'),
-       Input('trigger', 'n_clicks')
-   )
-   def update_new_component(n_clicks):
-       # Your component logic
-       pass
-   ```
-
-### Testing
-
-```bash
-# Run unit tests
-python -m pytest tests/
-
-# Run integration tests
-python -m pytest tests/integration/
-
-# Run load tests
-locust -f locustfile.py --host=http://localhost:5000
+### 1. Clone the Repository
+   ```bash
+   git clone <repository-url>
+cd ml-image-classifier-1
 ```
 
-## 🚀 Deployment
+### 2. Create Virtual Environment
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-### Cloud Deployment
-
-1. **AWS EC2**
+### 3. Install Dependencies
    ```bash
-   # Deploy to EC2 instance
-   ssh -i your-key.pem ubuntu@your-instance
-   git clone <repository-url>
-   cd ml-image-classifier
    pip install -r requirements.txt
-   nohup python app.py &
-   nohup python dashboard.py &
    ```
 
-2. **Google Cloud Compute Engine**
+### 4. Prepare Dataset
+Ensure your dataset is organized as follows:
+```
+data/
+├── train/
+│   ├── cat.0.jpg
+│   ├── cat.1.jpg
+│   ├── dog.0.jpg
+│   └── dog.1.jpg
+└── test/
+    ├── cat.10.jpg
+    ├── cat.11.jpg
+    ├── dog.10.jpg
+    └── dog.11.jpg
+```
+
+### 5. Train Initial Model
+```bash
+# Run the Jupyter notebook to train the model
+jupyter notebook notebook/ml-image-classifier.ipynb
+```
+
+## 🚀 Usage
+
+### Starting the Application
    ```bash
-   # Deploy to Compute Engine
-   gcloud compute ssh your-instance
-   git clone <repository-url>
-   cd ml-image-classifier
-   pip install -r requirements.txt
-   nohup python app.py &
-   nohup python dashboard.py &
-   ```
+   python app.py
+```
 
-3. **Azure Virtual Machine**
-   ```bash
-   # Deploy to Azure VM
-   ssh username@your-vm-ip
-   git clone <repository-url>
-   cd ml-image-classifier
-   pip install -r requirements.txt
-   nohup python app.py &
-   nohup python dashboard.py &
-   ```
+The application will be available at:
+- **Web Interface**: http://localhost:5000
+- **API Base URL**: http://localhost:5000/api
 
-### Production Considerations
+### Using the Web Interface
 
-- **Environment Variables**: Set production configs
-- **SSL/TLS**: Enable HTTPS
-- **Authentication**: Add API key authentication
-- **Logging**: Implement structured logging
-- **Monitoring**: Set up alerts and dashboards
-- **Backup**: Regular model and data backups
+1. **Prediction Tab**
+   - Upload an image file
+   - Click "Predict" to get classification results
+   - View confidence scores and class probabilities
 
-## 📝 API Documentation
+2. **Retrain Tab**
+   - Upload multiple images for retraining
+   - Click "Start Retraining" to train a new model
+   - Monitor training progress in real-time
 
-### Authentication
-Currently, the API doesn't require authentication. For production, implement API key authentication.
+3. **Monitoring Tab**
+   - View system statistics (CPU, memory, disk usage)
+   - Check recent predictions and model performance
+   - Monitor model information and status
 
-### Rate Limiting
-Default rate limit: 100 requests per minute per IP.
+### Using the API
 
-### Error Handling
-All endpoints return appropriate HTTP status codes:
-- `200`: Success
-- `400`: Bad Request
-- `500`: Internal Server Error
+#### Make a Prediction
+```bash
+curl -X POST -F "file=@image.jpg" http://localhost:5000/api/predict
+```
 
-### Response Format
+Response:
 ```json
 {
   "predicted_class": "cat",
   "confidence": 0.95,
-  "prediction_time": 0.15,
-  "timestamp": "2024-01-01T12:00:00Z"
+  "probabilities": {
+    "cat": 0.95,
+    "dog": 0.05
+  },
+  "timestamp": "2024-01-15T10:30:00"
 }
+```
+
+#### Upload Files for Retraining
+   ```bash
+curl -X POST -F "files=@image1.jpg" -F "files=@image2.jpg" http://localhost:5000/api/upload
+```
+
+#### Trigger Model Retraining
+   ```bash
+curl -X POST http://localhost:5000/api/retrain
+   ```
+
+#### Get System Statistics
+   ```bash
+curl http://localhost:5000/api/statistics
+   ```
+
+## 📊 Load Testing
+
+### Running Load Tests with Locust
+
+1. **Start the application** (if not already running):
+   ```bash
+   python app.py
+   ```
+
+2. **Run Locust**:
+   ```bash
+   locust -f locustfile.py --host=http://localhost:5000
+   ```
+
+3. **Open Locust Web Interface**:
+   - Go to http://localhost:8089
+   - Configure number of users and spawn rate
+   - Start the test
+
+### Predefined Test Scenarios
+
+```bash
+# Light load test (10 users)
+locust -f locustfile.py --host=http://localhost:5000 --users=10 --spawn-rate=1 --run-time=2m
+
+# Medium load test (50 users)
+locust -f locustfile.py --host=http://localhost:5000 --users=50 --spawn-rate=5 --run-time=5m
+
+# Heavy load test (100 users)
+locust -f locustfile.py --host=http://localhost:5000 --users=100 --spawn-rate=10 --run-time=10m
+
+# Stress test (200 users)
+locust -f locustfile.py --host=http://localhost:5000 --users=200 --spawn-rate=20 --run-time=15m
+```
+
+## 📈 Model Performance
+
+### Evaluation Metrics
+- **Accuracy**: Overall prediction accuracy
+- **Precision**: True positives / (True positives + False positives)
+- **Recall**: True positives / (True positives + False negatives)
+- **F1-Score**: Harmonic mean of precision and recall
+
+### Expected Performance
+- **Custom CNN**: ~85-90% accuracy
+- **VGG16 Transfer Learning**: ~90-95% accuracy
+- **ResNet50 Transfer Learning**: ~92-97% accuracy
+
+## 🔧 Configuration
+
+### Environment Variables
+```bash
+export FLASK_ENV=development
+export FLASK_DEBUG=1
+export MODEL_PATH=models/best_model.h5
+export UPLOAD_FOLDER=uploads
+```
+
+### Model Configuration
+Edit `src/model.py` to modify:
+- Image size (default: 224x224)
+- Model architecture
+- Training parameters
+- Data augmentation settings
+
+## 🚀 Deployment
+
+### Local Development
+   ```bash
+# Install dependencies
+   pip install -r requirements.txt
+
+# Run the application
+python app.py
+
+# Access the web interface
+# Open http://localhost:5000 in your browser
+```
+
+### Production Deployment
+For production deployment, consider using:
+- **Gunicorn** with WSGI server
+- **Nginx** as reverse proxy
+- **Cloud platforms** like Heroku, AWS, or Google Cloud
+
+## 📝 API Documentation
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Web interface |
+| POST | `/api/predict` | Make prediction |
+| POST | `/api/upload` | Upload files |
+| POST | `/api/retrain` | Trigger retraining |
+| GET | `/api/statistics` | System statistics |
+| GET | `/api/predictions` | Recent predictions |
+| GET | `/api/model-info` | Model information |
+| GET | `/api/health` | Health check |
+
+### Request/Response Examples
+
+See the [API Examples](docs/api-examples.md) for detailed request/response formats.
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+1. **Model not loading**
+   - Ensure model file exists in `models/` directory
+   - Check model metadata file
+   - Verify TensorFlow version compatibility
+
+2. **Memory errors during training**
+   - Reduce batch size in `src/preprocessing.py`
+   - Use smaller image size
+   - Close other applications
+
+3. **Upload errors**
+   - Check file size limits (16MB max)
+   - Verify file format (jpg, png, bmp, tiff)
+   - Ensure upload directory has write permissions
+
+4. **API connection errors**
+   - Verify Flask app is running
+   - Check port 5000 is available
+   - Ensure firewall allows connections
+
+### Debug Mode
+```bash
+export FLASK_DEBUG=1
+python app.py
 ```
 
 ## 🤝 Contributing
@@ -364,27 +346,28 @@ All endpoints return appropriate HTTP status codes:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests
+4. Add tests if applicable
 5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- TensorFlow/Keras for the deep learning framework
-- Dash for the interactive dashboard
-- Flask for the REST API
+- TensorFlow and Keras for deep learning framework
+- Flask for web framework
+- Bootstrap for UI components
 - Locust for load testing
+- OpenCV for image processing
 
 ## 📞 Support
 
-For questions and support:
-- Create an issue on GitHub
+For support and questions:
+- Create an issue in the repository
 - Contact: [your-email@example.com]
 - Documentation: [link-to-docs]
 
 ---
 
-**Note**: This is a demonstration project for educational purposes. For production use, implement proper security measures, error handling, and monitoring.
+**Note**: This project is designed for educational and demonstration purposes. For production use, consider additional security measures, error handling, and scalability improvements. 

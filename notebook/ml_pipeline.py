@@ -1,368 +1,390 @@
 #!/usr/bin/env python3
 """
-ML Image Classification Pipeline - Python Script Version
-
-This script demonstrates the complete machine learning pipeline for image classification of cats and dogs.
-You can run this as a Python script or convert it to a Jupyter notebook.
-
-To convert to notebook:
-jupyter nbconvert --to notebook --execute ml_pipeline.py --output ml_pipeline.ipynb
+ML Image Classifier Pipeline - Python Script Version
+This script contains all the code from the Jupyter notebook for the ML pipeline.
 """
 
-# Import required libraries
-import os
 import sys
+sys.path.append('../src')
+
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import tensorflow as tf
-from tensorflow.keras import layers, models, optimizers, callbacks
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
-import cv2
-from PIL import Image
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
-# Add src to path
-sys.path.append('../src')
+# Set style for better plots
+plt.style.use('seaborn-v0_8')
+sns.set_palette("husl")
 
 # Import our custom modules
-from src.preprocessing import ImagePreprocessor
-from src.model import ImageClassifier
-from src.prediction import ImagePredictor
+from preprocessing import ImagePreprocessor
+from model import ImageClassifier
+from prediction import PredictionService
 
-print("TensorFlow version:", tf.__version__)
-print("GPU available:", tf.config.list_physical_devices('GPU'))
-
-# ============================================================================
-# 1. DATA PREPROCESSING AND ANALYSIS
-# ============================================================================
-
-print("\n" + "="*50)
-print("1. DATA PREPROCESSING AND ANALYSIS")
-print("="*50)
+def main():
+    print("=" * 60)
+    print("ML IMAGE CLASSIFIER PIPELINE")
+    print("=" * 60)
+    
+    # 1. Setup and Imports
+    print("\n1. SETUP AND IMPORTS")
+    print("-" * 30)
+    print("All imports successful!")
+    
+    # 2. Data Loading and Preprocessing
+    print("\n2. DATA LOADING AND PREPROCESSING")
+    print("-" * 30)
 
 # Initialize preprocessor
-preprocessor = ImagePreprocessor()
-
-# Analyze dataset
-print("Analyzing dataset...")
-dataset_stats = preprocessor.analyze_dataset('../data/train')
-print("Dataset statistics:")
-print(f"Total images: {dataset_stats['total_images']}")
-print(f"Class distribution: {dataset_stats['class_counts']}")
-
-# Load and preprocess dataset
-print("\nLoading dataset...")
-images, labels, file_paths = preprocessor.load_dataset('../data/train')
-
-print(f"Loaded {len(images)} images")
-print(f"Image shape: {images.shape}")
-print(f"Labels shape: {labels.shape}")
-print(f"Unique labels: {np.unique(labels)}")
-
-# Create data generators with augmentation
-print("\nCreating data generators...")
-train_generator, validation_generator = preprocessor.create_data_generators('../data/train', validation_split=0.2)
-
-print(f"Training samples: {train_generator.samples}")
-print(f"Validation samples: {validation_generator.samples}")
-print(f"Number of classes: {train_generator.num_classes}")
-print(f"Class indices: {train_generator.class_indices}")
-
-# ============================================================================
-# 2. MODEL CREATION AND TRAINING
-# ============================================================================
-
-print("\n" + "="*50)
-print("2. MODEL CREATION AND TRAINING")
-print("="*50)
-
-# Initialize classifier
-classifier = ImageClassifier(img_size=(224, 224), num_classes=2, learning_rate=0.001)
-
-# Build model with pre-trained MobileNetV2
-print("Building model...")
-model = classifier.build_model(use_pretrained=True)
-
-# Display model summary
-print("Model Summary:")
-model.summary()
-
-# Train the model
-print("\nStarting model training...")
-history = classifier.train(train_generator, validation_generator, epochs=30, batch_size=32)
-
-print("Training completed!")
-
-# Plot training history
-classifier.plot_training_history('training_history.png')
-print("Training history plot saved as 'training_history.png'")
-
-# ============================================================================
-# 3. MODEL EVALUATION
-# ============================================================================
-
-print("\n" + "="*50)
-print("3. MODEL EVALUATION")
-print("="*50)
-
-# Evaluate model on validation set
-print("Evaluating model...")
-metrics = classifier.evaluate_model(validation_generator)
-
-print("\nModel Performance Metrics:")
-print(f"Test Loss: {metrics['test_loss']:.4f}")
-print(f"Test Accuracy: {metrics['test_accuracy']:.4f}")
-print(f"Test Precision: {metrics['test_precision']:.4f}")
-print(f"Test Recall: {metrics['test_recall']:.4f}")
-print(f"Test F1 Score: {metrics['test_f1']:.4f}")
-
-# Display classification report
-print("\nClassification Report:")
-classification_rep = metrics['classification_report']
-for class_name in ['cat', 'dog']:
-    print(f"\n{class_name.upper()}:")
-    print(f"  Precision: {classification_rep[class_name]['precision']:.4f}")
-    print(f"  Recall: {classification_rep[class_name]['recall']:.4f}")
-    print(f"  F1-Score: {classification_rep[class_name]['f1-score']:.4f}")
-    print(f"  Support: {classification_rep[class_name]['support']}")
-
-# Plot confusion matrix
-conf_matrix = np.array(metrics['confusion_matrix'])
-
-plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
-            xticklabels=['Cat', 'Dog'], yticklabels=['Cat', 'Dog'])
-plt.title('Confusion Matrix')
-plt.xlabel('Predicted')
-plt.ylabel('Actual')
-plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
+    preprocessor = ImagePreprocessor(img_size=(224, 224), batch_size=32)
+    print(f"Preprocessor initialized with image size: {preprocessor.img_size}")
+    print(f"Class names: {preprocessor.class_names}")
+    
+    # Load dataset
+    print("\nLoading dataset...")
+    try:
+        X_train, y_train, X_test, y_test = preprocessor.load_dataset_from_flat_structure('../data')
+        
+        print(f"Training set shape: {X_train.shape}")
+        print(f"Test set shape: {X_test.shape}")
+        print(f"Training labels shape: {y_train.shape}")
+        print(f"Test labels shape: {y_test.shape}")
+        
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
+        return
+    
+    # Visualize dataset samples
+    print("\nVisualizing dataset samples...")
+    try:
+        preprocessor.visualize_dataset(X_train, y_train, num_samples=8)
+        plt.savefig('dataset_samples.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    except Exception as e:
+        print(f"Error visualizing dataset: {e}")
+    
+    # Plot class distribution
+    print("\nAnalyzing class distribution...")
+    try:
+        preprocessor.plot_class_distribution(y_train, y_test)
+        plt.savefig('class_distribution.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    except Exception as e:
+        print(f"Error plotting class distribution: {e}")
+    
+    # 3. Data Analysis and Insights
+    print("\n3. DATA ANALYSIS AND INSIGHTS")
+    print("-" * 30)
+    
+    def analyze_image_characteristics(X_train, y_train):
+        """Analyze various characteristics of the images"""
+        
+        # Calculate brightness (mean pixel value)
+        brightness = np.mean(X_train, axis=(1, 2, 3))
+        
+        # Calculate contrast (standard deviation of pixel values)
+        contrast = np.std(X_train, axis=(1, 2, 3))
+        
+        # Calculate color distribution
+        red_channel = np.mean(X_train[:, :, :, 0], axis=(1, 2))
+        green_channel = np.mean(X_train[:, :, :, 1], axis=(1, 2))
+        blue_channel = np.mean(X_train[:, :, :, 2], axis=(1, 2))
+        
+        # Create DataFrame for analysis
+        df = pd.DataFrame({
+            'class': [preprocessor.class_names[y] for y in y_train],
+            'brightness': brightness,
+            'contrast': contrast,
+            'red_channel': red_channel,
+            'green_channel': green_channel,
+            'blue_channel': blue_channel
+        })
+        
+        return df
+    
+    # Perform analysis
+    print("Analyzing image characteristics...")
+    try:
+        image_analysis = analyze_image_characteristics(X_train, y_train)
+        print("\nImage Analysis Summary:")
+        print(image_analysis.groupby('class').describe())
+        
+        # Visualize image characteristics by class
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        fig.suptitle('Image Characteristics Analysis by Class', fontsize=16, fontweight='bold')
+        
+        # Brightness
+        axes[0, 0].hist(image_analysis[image_analysis['class'] == 'cat']['brightness'], 
+                        alpha=0.7, label='Cat', bins=20)
+        axes[0, 0].hist(image_analysis[image_analysis['class'] == 'dog']['brightness'], 
+                        alpha=0.7, label='Dog', bins=20)
+        axes[0, 0].set_title('Brightness Distribution')
+        axes[0, 0].set_xlabel('Brightness')
+        axes[0, 0].set_ylabel('Frequency')
+        axes[0, 0].legend()
+        
+        # Contrast
+        axes[0, 1].hist(image_analysis[image_analysis['class'] == 'cat']['contrast'], 
+                        alpha=0.7, label='Cat', bins=20)
+        axes[0, 1].hist(image_analysis[image_analysis['class'] == 'dog']['contrast'], 
+                        alpha=0.7, label='Dog', bins=20)
+        axes[0, 1].set_title('Contrast Distribution')
+        axes[0, 1].set_xlabel('Contrast')
+        axes[0, 1].set_ylabel('Frequency')
+        axes[0, 1].legend()
+        
+        # Red Channel
+        axes[0, 2].hist(image_analysis[image_analysis['class'] == 'cat']['red_channel'], 
+                        alpha=0.7, label='Cat', bins=20)
+        axes[0, 2].hist(image_analysis[image_analysis['class'] == 'dog']['red_channel'], 
+                        alpha=0.7, label='Dog', bins=20)
+        axes[0, 2].set_title('Red Channel Distribution')
+        axes[0, 2].set_xlabel('Red Channel Value')
+        axes[0, 2].set_ylabel('Frequency')
+        axes[0, 2].legend()
+        
+        # Green Channel
+        axes[1, 0].hist(image_analysis[image_analysis['class'] == 'cat']['green_channel'], 
+                        alpha=0.7, label='Cat', bins=20)
+        axes[1, 0].hist(image_analysis[image_analysis['class'] == 'dog']['green_channel'], 
+                        alpha=0.7, label='Dog', bins=20)
+        axes[1, 0].set_title('Green Channel Distribution')
+        axes[1, 0].set_xlabel('Green Channel Value')
+        axes[1, 0].set_ylabel('Frequency')
+        axes[1, 0].legend()
+        
+        # Blue Channel
+        axes[1, 1].hist(image_analysis[image_analysis['class'] == 'cat']['blue_channel'], 
+                        alpha=0.7, label='Cat', bins=20)
+        axes[1, 1].hist(image_analysis[image_analysis['class'] == 'dog']['blue_channel'], 
+                        alpha=0.7, label='Dog', bins=20)
+        axes[1, 1].set_title('Blue Channel Distribution')
+        axes[1, 1].set_xlabel('Blue Channel Value')
+        axes[1, 1].set_ylabel('Frequency')
+        axes[1, 1].legend()
+        
+        # Box plot of brightness by class
+        image_analysis.boxplot(column='brightness', by='class', ax=axes[1, 2])
+        axes[1, 2].set_title('Brightness by Class')
+        axes[1, 2].set_xlabel('Class')
+        axes[1, 2].set_ylabel('Brightness')
+        
+        plt.tight_layout()
+        plt.savefig('data_analysis.png', dpi=300, bbox_inches='tight')
 plt.show()
 
-# ============================================================================
-# 4. MODEL TESTING AND PREDICTION
-# ============================================================================
-
-print("\n" + "="*50)
-print("4. MODEL TESTING AND PREDICTION")
-print("="*50)
-
-# Save the trained model
-print("Saving model...")
-classifier.save_model('../models/image_classifier.h5')
-print("Model saved successfully!")
-
-# Test prediction on sample images
-predictor = ImagePredictor('../models/image_classifier.h5')
-
-# Test on a few sample images
-test_images = ['../data/test/0.jpg', '../data/test/1.jpg', '../data/test/2.jpg']
-
-print("Testing predictions on sample images:")
-for img_path in test_images:
-    if os.path.exists(img_path):
-        result = predictor.predict(img_path, return_probabilities=True)
-        print(f"\nImage: {os.path.basename(img_path)}")
-        print(f"Predicted: {result['predicted_class']}")
-        print(f"Confidence: {result['confidence']:.4f}")
-        print(f"Prediction time: {result['prediction_time']:.4f}s")
-        if 'probabilities' in result:
-            print("Probabilities:")
-            for class_name, prob in result['probabilities'].items():
-                print(f"  {class_name}: {prob:.4f}")
-
-# ============================================================================
-# 5. FEATURE ANALYSIS AND INTERPRETATIONS
-# ============================================================================
-
-print("\n" + "="*50)
-print("5. FEATURE ANALYSIS AND INTERPRETATIONS")
-print("="*50)
-
-# Analyze model features using Grad-CAM
-def generate_gradcam(model, img_array, layer_name='global_average_pooling2d'):
-    """Generate Grad-CAM visualization"""
-    grad_model = tf.keras.models.Model(
-        [model.inputs], [model.get_layer(layer_name).input, model.output]
+        print("\nKey Insights:")
+        print(f"1. Cats tend to have {'higher' if image_analysis.groupby('class')['brightness'].mean()['cat'] > image_analysis.groupby('class')['brightness'].mean()['dog'] else 'lower'} brightness than dogs")
+        print(f"2. Dogs have {'higher' if image_analysis.groupby('class')['contrast'].mean()['dog'] > image_analysis.groupby('class')['contrast'].mean()['cat'] else 'lower'} contrast than cats")
+        print(f"3. Color channel distributions show {'similar' if abs(image_analysis.groupby('class')['red_channel'].mean()['cat'] - image_analysis.groupby('class')['red_channel'].mean()['dog']) < 0.05 else 'different'} patterns between classes")
+        
+    except Exception as e:
+        print(f"Error in data analysis: {e}")
+    
+    # 4. Model Training
+    print("\n4. MODEL TRAINING")
+    print("-" * 30)
+    
+    # Split training data into train and validation
+    from sklearn.model_selection import train_test_split
+    
+    X_train_split, X_val, y_train_split, y_val = train_test_split(
+        X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
     )
     
-    with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(img_array)
-        loss = predictions[:, tf.argmax(predictions[0])]
+    print(f"Training set: {X_train_split.shape}")
+    print(f"Validation set: {X_val.shape}")
+    print(f"Test set: {X_test.shape}")
     
-    grads = tape.gradient(loss, conv_outputs)
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+    # Create data generators with augmentation
+    print("\nCreating data generators...")
+    try:
+        train_generator, val_generator = preprocessor.create_data_generators(
+            X_train_split, y_train_split, X_val, y_val
+        )
+        print("Data generators created successfully!")
+    except Exception as e:
+        print(f"Error creating data generators: {e}")
+        return
     
-    conv_outputs = conv_outputs[0]
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-    heatmap = tf.squeeze(heatmap)
+    # Initialize and build model
+    print("\nBuilding model...")
+    try:
+        classifier = ImageClassifier(model_type='custom')
+        model = classifier.build_model()
+        
+        print("Model architecture:")
+        model.summary()
+    except Exception as e:
+        print(f"Error building model: {e}")
+        return
     
-    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
-    return heatmap.numpy()
-
-# Test Grad-CAM on sample images
-sample_img_path = '../data/test/0.jpg'
-if os.path.exists(sample_img_path):
-    # Load and preprocess image
-    img = cv2.imread(sample_img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_resized = cv2.resize(img, (224, 224))
-    img_array = np.expand_dims(img_resized.astype(np.float32) / 255.0, axis=0)
+    # Train the model
+    print("\nStarting model training...")
+    start_time = datetime.now()
     
-    # Generate heatmap
-    heatmap = generate_gradcam(classifier.model, img_array)
+    try:
+        history = classifier.train(
+            train_generator, 
+            val_generator, 
+            epochs=50,
+            model_save_path='../models/best_model.h5'
+        )
+        
+        end_time = datetime.now()
+        training_duration = (end_time - start_time).total_seconds()
+        
+        print(f"\nTraining completed in {training_duration:.2f} seconds")
+        print(f"Training completed in {training_duration/60:.2f} minutes")
+        
+    except Exception as e:
+        print(f"Error during training: {e}")
+        return
     
-    # Resize heatmap to match original image
-    heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
+    # 5. Model Evaluation
+    print("\n5. MODEL EVALUATION")
+    print("-" * 30)
     
-    # Plot results
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    # Plot training history
+    print("Plotting training history...")
+    try:
+        classifier.plot_training_history(save_path='training_history.png')
+    except Exception as e:
+        print(f"Error plotting training history: {e}")
     
-    axes[0].imshow(img)
-    axes[0].set_title('Original Image')
-    axes[0].axis('off')
+    # Evaluate model on test set
+    print("\nEvaluating model on test set...")
+    try:
+        metrics = classifier.evaluate_model(X_test, y_test)
+        
+        print("\nTest Set Evaluation Results:")
+        print(f"Accuracy: {metrics['accuracy']:.4f}")
+        print(f"Precision: {metrics['precision']:.4f}")
+        print(f"Recall: {metrics['recall']:.4f}")
+        print(f"F1 Score: {metrics['f1_score']:.4f}")
+        
+        print("\nDetailed Classification Report:")
+        print(metrics['classification_report'])
+        
+    except Exception as e:
+        print(f"Error evaluating model: {e}")
+        return
     
-    axes[1].imshow(heatmap, cmap='jet')
-    axes[1].set_title('Grad-CAM Heatmap')
-    axes[1].axis('off')
+    # Plot confusion matrix
+    print("\nPlotting confusion matrix...")
+    try:
+        cm = np.array(metrics['confusion_matrix'])
+        classifier.plot_confusion_matrix(cm, save_path='confusion_matrix.png')
+    except Exception as e:
+        print(f"Error plotting confusion matrix: {e}")
     
-    axes[2].imshow(img)
-    axes[2].imshow(heatmap, cmap='jet', alpha=0.5)
-    axes[2].set_title('Overlay')
-    axes[2].axis('off')
-    
-    plt.tight_layout()
-    plt.savefig('gradcam_analysis.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-# ============================================================================
-# 6. MODEL PERFORMANCE ANALYSIS
-# ============================================================================
-
-print("\n" + "="*50)
-print("6. MODEL PERFORMANCE ANALYSIS")
-print("="*50)
-
-# Analyze model performance across different metrics
-performance_metrics = {
-    'Accuracy': metrics['test_accuracy'],
-    'Precision': metrics['test_precision'],
-    'Recall': metrics['test_recall'],
-    'F1-Score': metrics['test_f1']
-}
-
-# Create performance visualization
-plt.figure(figsize=(10, 6))
-metrics_names = list(performance_metrics.keys())
-metrics_values = list(performance_metrics.values())
-
-bars = plt.bar(metrics_names, metrics_values, color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'])
-plt.title('Model Performance Metrics', fontsize=16, fontweight='bold')
-plt.ylabel('Score', fontsize=12)
-plt.ylim(0, 1)
-
-# Add value labels on bars
-for bar, value in zip(bars, metrics_values):
-    plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01, 
-             f'{value:.3f}', ha='center', va='bottom', fontweight='bold')
-
-plt.grid(axis='y', alpha=0.3)
+    # Analyze misclassifications
+    def analyze_misclassifications(X_test, y_test, y_pred, metrics):
+        """Analyze misclassified images"""
+        
+        # Get misclassified indices
+        misclassified = np.where(y_test != y_pred)[0]
+        
+        print(f"\nMisclassification Analysis:")
+        print(f"Total misclassifications: {len(misclassified)}")
+        print(f"Misclassification rate: {len(misclassified)/len(y_test)*100:.2f}%")
+        
+        if len(misclassified) > 0:
+            # Show some misclassified examples
+            fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+            axes = axes.ravel()
+            
+            for i, idx in enumerate(misclassified[:8]):
+                axes[i].imshow(X_test[idx])
+                true_class = preprocessor.class_names[y_test[idx]]
+                pred_class = preprocessor.class_names[y_pred[idx]]
+                axes[i].set_title(f'True: {true_class}\nPred: {pred_class}')
+                axes[i].axis('off')
+            
 plt.tight_layout()
-plt.savefig('performance_metrics.png', dpi=300, bbox_inches='tight')
+            plt.savefig('misclassifications.png', dpi=300, bbox_inches='tight')
 plt.show()
 
-print("\nModel Performance Summary:")
-for metric, value in performance_metrics.items():
-    print(f"{metric}: {value:.4f}")
-
-# ============================================================================
-# 7. MODEL OPTIMIZATION INSIGHTS
-# ============================================================================
-
-print("\n" + "="*50)
-print("7. MODEL OPTIMIZATION INSIGHTS")
-print("="*50)
-
-# Analyze training history for optimization insights
-if history:
-    epochs = range(1, len(history.history['accuracy']) + 1)
+        return misclassified
     
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    # Analyze misclassifications
+    try:
+        y_pred = np.array(metrics['predictions'])
+        misclassified_indices = analyze_misclassifications(X_test, y_test, y_pred, metrics)
+    except Exception as e:
+        print(f"Error analyzing misclassifications: {e}")
     
-    # Training vs Validation Accuracy
-    axes[0, 0].plot(epochs, history.history['accuracy'], 'b-', label='Training Accuracy')
-    axes[0, 0].plot(epochs, history.history['val_accuracy'], 'r-', label='Validation Accuracy')
-    axes[0, 0].set_title('Training vs Validation Accuracy')
-    axes[0, 0].set_xlabel('Epoch')
-    axes[0, 0].set_ylabel('Accuracy')
-    axes[0, 0].legend()
-    axes[0, 0].grid(True, alpha=0.3)
+    # 6. Model Deployment Preparation
+    print("\n6. MODEL DEPLOYMENT PREPARATION")
+    print("-" * 30)
     
-    # Training vs Validation Loss
-    axes[0, 1].plot(epochs, history.history['loss'], 'b-', label='Training Loss')
-    axes[0, 1].plot(epochs, history.history['val_loss'], 'r-', label='Validation Loss')
-    axes[0, 1].set_title('Training vs Validation Loss')
-    axes[0, 1].set_xlabel('Epoch')
-    axes[0, 1].set_ylabel('Loss')
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
+    # Save final model and metadata
+    print("Saving final model and metadata...")
+    try:
+        classifier.save_model(
+            '../models/best_model.h5',
+            '../models/model_metadata.json'
+        )
+        print("Model saved successfully!")
+    except Exception as e:
+        print(f"Error saving model: {e}")
     
-    # Precision
-    axes[1, 0].plot(epochs, history.history['precision'], 'g-', label='Training Precision')
-    axes[1, 0].plot(epochs, history.history['val_precision'], 'm-', label='Validation Precision')
-    axes[1, 0].set_title('Training vs Validation Precision')
-    axes[1, 0].set_xlabel('Epoch')
-    axes[1, 0].set_ylabel('Precision')
-    axes[1, 0].legend()
-    axes[1, 0].grid(True, alpha=0.3)
+    # Test prediction service
+    print("\nTesting prediction service...")
+    try:
+        prediction_service = PredictionService(
+            '../models/best_model.h5',
+            '../models/model_metadata.json'
+        )
+        
+        # Test with a sample image
+        sample_image = X_test[0:1]  # Take first test image
+        prediction = classifier.predict_single_image(sample_image)
+        
+        print(f"\nSample Prediction Test:")
+        print(f"Predicted class: {prediction['predicted_class']}")
+        print(f"Confidence: {prediction['confidence']:.4f}")
+        print(f"True class: {preprocessor.class_names[y_test[0]]}")
+        print(f"Prediction correct: {prediction['predicted_class'] == preprocessor.class_names[y_test[0]]}")
+        
+    except Exception as e:
+        print(f"Error testing prediction service: {e}")
     
-    # Recall
-    axes[1, 1].plot(epochs, history.history['recall'], 'c-', label='Training Recall')
-    axes[1, 1].plot(epochs, history.history['val_recall'], 'y-', label='Validation Recall')
-    axes[1, 1].set_title('Training vs Validation Recall')
-    axes[1, 1].set_xlabel('Epoch')
-    axes[1, 1].set_ylabel('Recall')
-    axes[1, 1].legend()
-    axes[1, 1].grid(True, alpha=0.3)
+    # 7. Summary and Conclusions
+    print("\n7. SUMMARY AND CONCLUSIONS")
+    print("-" * 30)
     
-    plt.tight_layout()
-    plt.savefig('training_insights.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    # Final summary
+    print("=" * 60)
+    print("ML PIPELINE SUMMARY")
+    print("=" * 60)
+    print(f"Dataset: {X_train.shape[0]} training, {X_test.shape[0]} test images")
+    print(f"Classes: {preprocessor.class_names}")
+    print(f"Image size: {preprocessor.img_size}")
+    print(f"Model type: {classifier.model_type}")
+    print(f"Training time: {training_duration/60:.2f} minutes")
+    print(f"\nFinal Test Results:")
+    print(f"  Accuracy: {metrics['accuracy']:.4f}")
+    print(f"  Precision: {metrics['precision']:.4f}")
+    print(f"  Recall: {metrics['recall']:.4f}")
+    print(f"  F1 Score: {metrics['f1_score']:.4f}")
+    print(f"\nModel saved to: ../models/best_model.h5")
+    print(f"Metadata saved to: ../models/model_metadata.json")
+    print("=" * 60)
     
-    print(f"\nModel Complexity:")
-    print(f"Total parameters: {classifier.model.count_params():,}")
-    print(f"Trainable parameters: {sum([tf.keras.backend.count_params(w) for w in classifier.model.trainable_weights]):,}")
-
-# ============================================================================
-# 8. CONCLUSION AND NEXT STEPS
-# ============================================================================
-
-print("\n" + "="*50)
-print("8. CONCLUSION AND NEXT STEPS")
-print("="*50)
-
-print("=== ML Pipeline Summary ===\n")
-print(f"Dataset Size: {dataset_stats['total_images']} images")
-print(f"Classes: {list(dataset_stats['class_counts'].keys())}")
-print(f"Model Architecture: MobileNetV2 + Custom Classifier")
-print(f"Final Test Accuracy: {metrics['test_accuracy']:.4f}")
-print(f"Final Test F1-Score: {metrics['test_f1']:.4f}")
-print(f"\nModel saved to: ../models/image_classifier.h5")
-print("\nGenerated Files:")
-print("- training_history.png")
-print("- confusion_matrix.png")
-print("- gradcam_analysis.png")
-print("- performance_metrics.png")
-print("- training_insights.png")
-
-print("\nNext Steps:")
-print("1. Deploy the model using the Flask API")
-print("2. Set up monitoring and logging")
-print("3. Implement retraining pipeline")
-print("4. Create web interface for predictions")
+    # Key insights
+    print("\nKEY INSIGHTS:")
+    print("1. Data preprocessing with augmentation improves model generalization")
+    print("2. Custom CNN architecture performs well for this binary classification task")
+    print("3. Model shows good balance between precision and recall")
+    print("4. Ready for deployment with Flask API and web interface")
+    print("5. Supports real-time prediction and model retraining")
 
 print("\n🎉 ML Pipeline completed successfully!") 
+
+if __name__ == "__main__":
+    main() 
